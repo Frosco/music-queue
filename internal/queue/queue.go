@@ -21,6 +21,34 @@ func NewQueue(storageService *storage.FileStorage) *QueueService {
 	}
 }
 
+// validateAlbumFormat checks if an album entry follows the "Artist Name - Album Title" format
+// Returns true if valid, false otherwise
+func validateAlbumFormat(album string) bool {
+	album = strings.TrimSpace(album)
+
+	// Must contain at least one dash
+	dashIndex := strings.Index(album, "-")
+	if dashIndex == -1 {
+		return false
+	}
+
+	// Must have at least one character before the dash
+	if dashIndex == 0 {
+		return false
+	}
+
+	// Must have at least one character after the dash
+	if dashIndex == len(album)-1 {
+		return false
+	}
+
+	// Check that there's content before and after the dash (not just whitespace)
+	beforeDash := strings.TrimSpace(album[:dashIndex])
+	afterDash := strings.TrimSpace(album[dashIndex+1:])
+
+	return len(beforeDash) > 0 && len(afterDash) > 0
+}
+
 // ImportAlbums imports albums from a text file, skipping duplicates (case-insensitive)
 // Returns the number of albums added, number skipped, and any error encountered
 func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, err error) {
@@ -63,6 +91,12 @@ func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, e
 
 		// Skip empty lines (already handled by storage layer, but being explicit)
 		if album == "" {
+			continue
+		}
+
+		// Validate album format (Artist Name - Album Title)
+		if !validateAlbumFormat(album) {
+			skippedCount++
 			continue
 		}
 
