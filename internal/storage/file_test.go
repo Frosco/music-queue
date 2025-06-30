@@ -58,12 +58,12 @@ func TestFileStorage_ReadLines_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestFileStorage_ReadLines_WithContent(t *testing.T) {
+func TestFileStorage_ReadLines_WithEmptyLines(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.txt")
 
-	// Create file with content
-	content := "Album 1\nAlbum 2\n\n  \nAlbum 3\n"
+	// Create test file with empty lines and whitespace
+	content := "Artist 1 - Album 1\nArtist 2 - Album 2\n\n  \nArtist 3 - Album 3\n"
 	err := os.WriteFile(testFile, []byte(content), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,8 @@ func TestFileStorage_ReadLines_WithContent(t *testing.T) {
 		t.Errorf("ReadLines returned error: %v", err)
 	}
 
-	expected := []string{"Album 1", "Album 2", "Album 3"}
+	// Should return only non-empty lines, trimmed
+	expected := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
 	if len(lines) != len(expected) {
 		t.Errorf("Expected %d lines, got %d", len(expected), len(lines))
 	}
@@ -90,30 +91,25 @@ func TestFileStorage_ReadLines_WithContent(t *testing.T) {
 
 func TestFileStorage_WriteLines(t *testing.T) {
 	tempDir := t.TempDir()
-	testFile := filepath.Join(tempDir, "write_test.txt")
+	testFile := filepath.Join(tempDir, "test.txt")
 
 	storage := NewFileStorage(testFile)
-	testLines := []string{"Album 1", "Album 2", "Album 3"}
+	testLines := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
 
 	err := storage.WriteLines(testLines)
 	if err != nil {
 		t.Errorf("WriteLines returned error: %v", err)
 	}
 
-	// Verify file was created and content is correct
-	lines, err := storage.ReadLines()
+	// Verify file was created and contains expected content
+	content, err := os.ReadFile(testFile)
 	if err != nil {
-		t.Errorf("ReadLines returned error: %v", err)
+		t.Errorf("Failed to read test file: %v", err)
 	}
 
-	if len(lines) != len(testLines) {
-		t.Errorf("Expected %d lines, got %d", len(testLines), len(lines))
-	}
-
-	for i, expectedLine := range testLines {
-		if i < len(lines) && lines[i] != expectedLine {
-			t.Errorf("Line %d: expected %q, got %q", i, expectedLine, lines[i])
-		}
+	expectedContent := "Artist 1 - Album 1\nArtist 2 - Album 2\nArtist 3 - Album 3\n"
+	if string(content) != expectedContent {
+		t.Errorf("Expected content %q, got %q", expectedContent, string(content))
 	}
 }
 

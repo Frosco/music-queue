@@ -14,7 +14,7 @@ func TestCLI_Import_Success(t *testing.T) {
 
 	// Create import file
 	importFile := filepath.Join(tempDir, "albums.txt")
-	importContent := "Dark Side of the Moon\nAbbey Road\nThe Wall\n"
+	importContent := "Pink Floyd - Dark Side of the Moon\nThe Beatles - Abbey Road\nPink Floyd - The Wall\n"
 	err := os.WriteFile(importFile, []byte(importContent), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestCLI_Import_Success(t *testing.T) {
 		t.Fatalf("Failed to read queue file: %v", err)
 	}
 
-	expectedAlbums := []string{"Dark Side of the Moon", "Abbey Road", "The Wall"}
+	expectedAlbums := []string{"Pink Floyd - Dark Side of the Moon", "The Beatles - Abbey Road", "Pink Floyd - The Wall"}
 	queueLines := strings.Split(strings.TrimSpace(string(queueContent)), "\n")
 
 	if len(queueLines) != len(expectedAlbums) {
@@ -69,15 +69,15 @@ func TestCLI_Import_WithDuplicates(t *testing.T) {
 
 	// Create existing queue
 	queueFile := filepath.Join(tempDir, "queue.txt")
-	existingContent := "Dark Side of the Moon\nWish You Were Here\n"
+	existingContent := "Pink Floyd - Dark Side of the Moon\nPink Floyd - Wish You Were Here\n"
 	err := os.WriteFile(queueFile, []byte(existingContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create import file with duplicates
+	importContent := "PINK FLOYD - DARK SIDE OF THE MOON\nThe Beatles - Abbey Road\npink floyd - wish you were here\nPink Floyd - The Wall\n"
 	importFile := filepath.Join(tempDir, "albums.txt")
-	importContent := "DARK SIDE OF THE MOON\nAbbey Road\nwish you were here\nThe Wall\n"
 	err = os.WriteFile(importFile, []byte(importContent), 0644)
 	if err != nil {
 		t.Fatal(err)
