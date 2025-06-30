@@ -1,6 +1,4 @@
-
-
-### **High-Level Architecture**
+## **High-Level Architecture**
 
 We will use a layered architecture that separates the command-line interface (CLI) from the core business logic, and the business logic from the data storage mechanism.
 
@@ -23,9 +21,9 @@ go-music-queue/
 └── queue.txt               // The data file (can be placed elsewhere)
 ```
 
-### **Component Breakdown**
+## **Component Breakdown**
 
-#### 1\. CLI Layer: `cmd/queue/main.go`
+### 1\. CLI Layer: `cmd/queue/main.go`
 
   * **Responsibility**: To be the main entry point of the application.
   * **Implementation**:
@@ -33,7 +31,7 @@ go-music-queue/
       * Based on the command provided by the user, it will call the appropriate function in the `queue` package.
       * It will handle all `fmt.Println()` calls to display output to the user. It is the only part of the application that should directly interact with the console.
 
-#### 2\. Business Logic Layer: `internal/queue/queue.go`
+### 2\. Business Logic Layer: `internal/queue/queue.go`
 
   * **Responsibility**: To implement all the business rules defined in the PRD. This package will be the heart of the application.
   * **Proposed Functions**:
@@ -45,7 +43,7 @@ go-music-queue/
       * `CountAlbums() (int, error)`: Counts the albums.
   * **Key Detail**: This layer will coordinate operations. For example, `AddAlbum` will first ask the `storage` layer for the current list, then perform its duplicate check, and finally tell the `storage` layer to write the new list back to the file.
 
-#### 3\. Storage Layer: `internal/storage/file.go`
+### 3\. Storage Layer: `internal/storage/file.go`
 
   * **Responsibility**: To abstract away the file system operations. Its only job is to read and write slices of strings from/to a file.
   * **Proposed Functions**:
@@ -54,7 +52,7 @@ go-music-queue/
       * `WriteLines(lines []string) error`: Overwrites the `queue.txt` file with a new slice of strings.
   * **Data Location**: I recommend the `queue.txt` file be stored in the user's home directory by default (e.g., `~/.go-music-queue/queue.txt`). This prevents cluttering the directory where the command is run and gives the queue a persistent, predictable location. The application can create this directory on its first run.
 
-### **Data Flow Example: `queue next`**
+## **Data Flow Example: `queue next`**
 
 1.  **User** runs `go run main.go next` in their terminal.
 2.  **`main.go`** parses the `next` command.
