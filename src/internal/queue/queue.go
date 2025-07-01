@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"music-queue/internal/storage"
+	"music-queue/src/internal/storage"
 )
 
 // Package-level RNG for consistent random behavior

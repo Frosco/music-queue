@@ -8,25 +8,26 @@ The Music Queue application is a command-line tool designed to manage a personal
 
 We use a layered architecture that separates the command-line interface (CLI) from the core business logic, and the business logic from the data storage mechanism.
 
-1. **CLI Layer (`cmd`)**: This layer is responsible for parsing user commands and arguments.
-2. **Business Logic Layer (`internal/queue`)**: This layer contains the core application logic, such as how to add an album, check for duplicates, and select the next album. It knows nothing about the command line.
-3. **Storage Layer (`internal/storage`)**: This layer is responsible for reading from and writing to the `queue.txt` file. It knows nothing about albums or business rules.
+1. **CLI Layer (`src/cmd`)**: This layer is responsible for parsing user commands and arguments.
+2. **Business Logic Layer (`src/internal/queue`)**: This layer contains the core application logic, such as how to add an album, check for duplicates, and select the next album. It knows nothing about the command line.
+3. **Storage Layer (`src/internal/storage`)**: This layer is responsible for reading from and writing to the `queue.txt` file. It knows nothing about albums or business rules.
 
 ## **Source Tree**
 
 ```
 music-queue/
-├── cmd/
-│   └── queue/
-│       ├── main.go         // Entry point, CLI command parsing
-│       └── main_test.go    // CLI layer tests
-├── internal/
-│   ├── queue/
-│   │   ├── queue.go        // Core business logic (Add, Next, List, etc.)
-│   │   └── queue_test.go   // Business logic tests
-│   └── storage/
-│       ├── file.go         // File I/O operations
-│       └── file_test.go    // Storage layer tests
+├── src/
+│   ├── cmd/
+│   │   └── queue/
+│   │       ├── main.go         // Entry point, CLI command parsing
+│   │       └── main_test.go    // CLI layer tests
+│   └── internal/
+│       ├── queue/
+│       │   ├── queue.go        // Core business logic (Add, Next, List, etc.)
+│       │   └── queue_test.go   // Business logic tests
+│       └── storage/
+│           ├── file.go         // File I/O operations
+│           └── file_test.go    // Storage layer tests
 ├── docs/
 │   ├── architecture.md     // This document
 │   ├── prd.md             // Product Requirements Document
@@ -63,7 +64,7 @@ music-queue/
 
 ## **Component Breakdown**
 
-### 1. CLI Layer: `cmd/queue/main.go`
+### 1. CLI Layer: `src/cmd/queue/main.go`
 
 **Responsibility**: To be the main entry point of the application.
 
@@ -73,7 +74,7 @@ music-queue/
 - Handles all `fmt.Println()` calls to display output to the user. It is the only part of the application that should directly interact with the console.
 - Provides clear error messages and usage instructions.
 
-### 2. Business Logic Layer: `internal/queue/queue.go`
+### 2. Business Logic Layer: `src/internal/queue/queue.go`
 
 **Responsibility**: To implement all the business rules defined in the PRD. This package is the heart of the application.
 
@@ -87,7 +88,7 @@ music-queue/
 
 **Key Detail**: This layer coordinates operations. For example, `AddAlbum` will first ask the `storage` layer for the current list, then perform its duplicate check, and finally tell the `storage` layer to write the new list back to the file.
 
-### 3. Storage Layer: `internal/storage/file.go`
+### 3. Storage Layer: `src/internal/storage/file.go`
 
 **Responsibility**: To abstract away the file system operations. Its only job is to read and write slices of strings from/to a file.
 

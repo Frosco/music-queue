@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"music-queue/internal/storage"
+	"music-queue/src/internal/storage"
 )
 
 func TestNewQueue(t *testing.T) {

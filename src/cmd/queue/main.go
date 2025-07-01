@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"music-queue/internal/queue"
-	"music-queue/internal/storage"
+	"music-queue/src/internal/queue"
+	"music-queue/src/internal/storage"
 )
 
 func main() {
