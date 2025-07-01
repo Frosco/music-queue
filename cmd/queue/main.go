@@ -24,6 +24,8 @@ func main() {
 		handleImportCommand()
 	case "add":
 		handleAddCommand()
+	case "next":
+		handleNextCommand()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -166,12 +168,49 @@ func handleAddCommand() {
 	fmt.Printf("Queue saved to: %s\n", absQueuePath)
 }
 
+func handleNextCommand() {
+	// Set up flag parsing for next command
+	nextFlags := flag.NewFlagSet("next", flag.ExitOnError)
+	queuePath := nextFlags.String("queue", queue.GetDefaultQueuePath(), "Path to queue file")
+
+	nextFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s next [flags]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Get a random album from the queue and remove it.\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		nextFlags.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  %s next\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s next --queue /custom/path/queue.txt\n", os.Args[0])
+	}
+
+	// Parse next command arguments
+	err := nextFlags.Parse(os.Args[2:])
+	if err != nil {
+		os.Exit(1)
+	}
+
+	// Create storage and queue service
+	queueStorage := storage.NewFileStorage(*queuePath)
+	queueService := queue.NewQueue(queueStorage)
+
+	// Get next album
+	album, err := queueService.GetNextAlbum()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print the result in the required format
+	fmt.Printf("Now listening: %s\n", album)
+}
+
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Go Music Queue - Manage your music listening queue\n\n")
 	fmt.Fprintf(os.Stderr, "Usage: %s <command> [arguments]\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "Commands:\n")
 	fmt.Fprintf(os.Stderr, "  add \"Artist - Album\"  Add a single album to the queue\n")
 	fmt.Fprintf(os.Stderr, "  import <file>         Import albums from a text file\n")
+	fmt.Fprintf(os.Stderr, "  next                  Get the next album in the queue\n")
 	fmt.Fprintf(os.Stderr, "  help                  Show this help message\n\n")
 	fmt.Fprintf(os.Stderr, "For command-specific help:\n")
 	fmt.Fprintf(os.Stderr, "  %s <command> --help\n\n", os.Args[0])
