@@ -693,3 +693,142 @@ func TestQueueService_AddAlbum_WhitespaceHandling(t *testing.T) {
 		t.Errorf("Expected %q, got %q", expected, lines[0])
 	}
 }
+
+func TestQueueService_GetNextAlbum_Success(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with test albums
+	storage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
+	err := storage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Get next album
+	selectedAlbum, err := queue.GetNextAlbum()
+	if err != nil {
+		t.Errorf("GetNextAlbum returned error: %v", err)
+	}
+
+	// Verify selected album is one of the test albums
+	found := false
+	for _, album := range testAlbums {
+		if album == selectedAlbum {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Selected album %q not found in original list", selectedAlbum)
+	}
+
+	// Verify queue size decreased by 1
+	remainingAlbums, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read remaining albums: %v", err)
+	}
+
+	if len(remainingAlbums) != len(testAlbums)-1 {
+		t.Errorf("Expected %d remaining albums, got %d", len(testAlbums)-1, len(remainingAlbums))
+	}
+
+	// Verify selected album was removed
+	for _, remainingAlbum := range remainingAlbums {
+		if remainingAlbum == selectedAlbum {
+			t.Errorf("Selected album %q was not removed from queue", selectedAlbum)
+		}
+	}
+}
+
+func TestQueueService_GetNextAlbum_EmptyQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create empty queue
+	storage := storage.NewFileStorage(queueFile)
+	err := storage.WriteLines([]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Get next album from empty queue
+	selectedAlbum, err := queue.GetNextAlbum()
+	if err == nil {
+		t.Error("Expected error for empty queue")
+	}
+
+	if selectedAlbum != "" {
+		t.Errorf("Expected empty album string for empty queue, got %q", selectedAlbum)
+	}
+
+	// Check error message
+	if !strings.Contains(err.Error(), "queue is empty") {
+		t.Errorf("Expected 'queue is empty' error message, got: %v", err)
+	}
+}
+
+func TestQueueService_GetNextAlbum_SingleAlbum(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with single album
+	storage := storage.NewFileStorage(queueFile)
+	testAlbum := "Pink Floyd - The Wall"
+	err := storage.WriteLines([]string{testAlbum})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Get next album
+	selectedAlbum, err := queue.GetNextAlbum()
+	if err != nil {
+		t.Errorf("GetNextAlbum returned error: %v", err)
+	}
+
+	// Verify correct album was selected
+	if selectedAlbum != testAlbum {
+		t.Errorf("Expected %q, got %q", testAlbum, selectedAlbum)
+	}
+
+	// Verify queue is now empty
+	remainingAlbums, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read remaining albums: %v", err)
+	}
+
+	if len(remainingAlbums) != 0 {
+		t.Errorf("Expected empty queue after selecting last album, got %d albums", len(remainingAlbums))
+	}
+}
+
+func TestQueueService_GetNextAlbum_NonExistentFile(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "nonexistent.txt")
+
+	// Use non-existent file (ReadLines should return empty slice, not error)
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	// Get next album from non-existent file
+	selectedAlbum, err := queue.GetNextAlbum()
+	if err == nil {
+		t.Error("Expected error for non-existent queue file")
+	}
+
+	if selectedAlbum != "" {
+		t.Errorf("Expected empty album string for non-existent file, got %q", selectedAlbum)
+	}
+
+	// Should get "queue is empty" error since ReadLines returns empty slice for non-existent files
+	if !strings.Contains(err.Error(), "queue is empty") {
+		t.Errorf("Expected 'queue is empty' error message, got: %v", err)
+	}
+}

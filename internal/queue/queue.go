@@ -2,12 +2,17 @@ package queue
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"music-queue/internal/storage"
 )
+
+// Package-level RNG for consistent random behavior
+var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 // QueueService handles business logic for the music queue
 type QueueService struct {
@@ -169,6 +174,41 @@ func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, e
 	}
 
 	return addedCount, skippedCount, nil
+}
+
+// GetNextAlbum retrieves a random album from the queue and removes it
+// Returns the selected album and any error encountered
+func (qs *QueueService) GetNextAlbum() (string, error) {
+	// Read existing queue
+	existingAlbums, err := qs.storage.ReadLines()
+	if err != nil {
+		return "", fmt.Errorf("failed to read queue: %w", err)
+	}
+
+	// Check if queue is empty
+	if len(existingAlbums) == 0 {
+		return "", fmt.Errorf("the queue is empty")
+	}
+
+	// Select random index using package-level RNG
+	randomIndex := rng.Intn(len(existingAlbums))
+	selectedAlbum := existingAlbums[randomIndex]
+
+	// Create new slice excluding the selected album
+	updatedAlbums := make([]string, 0, len(existingAlbums)-1)
+	for i, album := range existingAlbums {
+		if i != randomIndex {
+			updatedAlbums = append(updatedAlbums, album)
+		}
+	}
+
+	// Save updated queue
+	err = qs.storage.WriteLines(updatedAlbums)
+	if err != nil {
+		return "", fmt.Errorf("failed to save updated queue: %w", err)
+	}
+
+	return selectedAlbum, nil
 }
 
 // GetDefaultQueuePath returns the default queue file path
