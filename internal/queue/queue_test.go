@@ -3,6 +3,7 @@ package queue
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"music-queue/internal/storage"
@@ -450,5 +451,245 @@ Pink Floyd - The Wall
 
 	if len(lines) != len(expected) {
 		t.Errorf("Expected %d lines in queue, got %d", len(expected), len(lines))
+	}
+}
+
+// TestQueueService_AddAlbum_Success tests successfully adding a new album
+func TestQueueService_AddAlbum_Success(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	// Add first album to empty queue
+	err := queue.AddAlbum("Pink Floyd - The Wall")
+	if err != nil {
+		t.Errorf("AddAlbum returned error: %v", err)
+	}
+
+	// Verify album was added
+	lines, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue: %v", err)
+	}
+
+	if len(lines) != 1 {
+		t.Errorf("Expected 1 line in queue, got %d", len(lines))
+	}
+
+	if lines[0] != "Pink Floyd - The Wall" {
+		t.Errorf("Expected 'Pink Floyd - The Wall', got %q", lines[0])
+	}
+
+	// Add second album to existing queue
+	err = queue.AddAlbum("The Beatles - Abbey Road")
+	if err != nil {
+		t.Errorf("AddAlbum returned error: %v", err)
+	}
+
+	// Verify both albums are present
+	lines, err = storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue: %v", err)
+	}
+
+	expected := []string{"Pink Floyd - The Wall", "The Beatles - Abbey Road"}
+	if len(lines) != len(expected) {
+		t.Errorf("Expected %d lines in queue, got %d", len(expected), len(lines))
+	}
+
+	for i, expectedAlbum := range expected {
+		if i < len(lines) && lines[i] != expectedAlbum {
+			t.Errorf("Line %d: expected %q, got %q", i, expectedAlbum, lines[i])
+		}
+	}
+}
+
+// TestQueueService_AddAlbum_Duplicate tests adding a duplicate album (case-insensitive)
+func TestQueueService_AddAlbum_Duplicate(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	// Add initial album
+	err := queue.AddAlbum("Pink Floyd - The Wall")
+	if err != nil {
+		t.Errorf("AddAlbum returned error: %v", err)
+	}
+
+	// Try to add exact duplicate
+	err = queue.AddAlbum("Pink Floyd - The Wall")
+	if err == nil {
+		t.Error("Expected error for duplicate album")
+	}
+
+	expectedErr := "album 'Pink Floyd - The Wall' already exists"
+	if err == nil || err.Error() != expectedErr {
+		t.Errorf("Expected error '%s', got: %v", expectedErr, err)
+	}
+
+	// Try to add case-insensitive duplicate
+	err = queue.AddAlbum("PINK FLOYD - THE WALL")
+	if err == nil {
+		t.Error("Expected error for case-insensitive duplicate album")
+	}
+
+	// The error message will reflect the input, not the original
+	expectedErr = "album 'PINK FLOYD - THE WALL' already exists"
+	if err == nil || err.Error() != expectedErr {
+		t.Errorf("Expected error '%s', got: %v", expectedErr, err)
+	}
+
+	// Try to add another case variation
+	err = queue.AddAlbum("pink floyd - the wall")
+	if err == nil {
+		t.Error("Expected error for lowercase duplicate album")
+	}
+
+	// Verify only one album is in the queue
+	lines, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue: %v", err)
+	}
+
+	if len(lines) != 1 {
+		t.Errorf("Expected 1 line in queue after duplicates, got %d", len(lines))
+	}
+
+	if lines[0] != "Pink Floyd - The Wall" {
+		t.Errorf("Expected 'Pink Floyd - The Wall', got %q", lines[0])
+	}
+}
+
+// TestQueueService_AddAlbum_InvalidFormat tests adding albums with invalid format
+func TestQueueService_AddAlbum_InvalidFormat(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	testCases := []string{
+		"",                     // empty string
+		"No Dash Here",         // no dash
+		"- Missing Artist",     // missing artist
+		"Missing Album -",      // missing album
+		"   - Whitespace Only", // whitespace before dash
+		"Artist -   ",          // whitespace after dash
+	}
+
+	for _, invalidAlbum := range testCases {
+		err := queue.AddAlbum(invalidAlbum)
+		if err == nil {
+			t.Errorf("Expected error for invalid album format: %q", invalidAlbum)
+		}
+
+		if !strings.Contains(err.Error(), "invalid album format") {
+			t.Errorf("Expected 'invalid album format' error for %q, got: %v", invalidAlbum, err)
+		}
+	}
+
+	// Verify no albums were added
+	lines, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue: %v", err)
+	}
+
+	if len(lines) != 0 {
+		t.Errorf("Expected 0 lines in queue after invalid formats, got %d", len(lines))
+	}
+}
+
+// TestQueueService_AddAlbum_WithExistingQueue tests adding to an existing queue
+func TestQueueService_AddAlbum_WithExistingQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create existing queue
+	storage := storage.NewFileStorage(queueFile)
+	err := storage.WriteLines([]string{"Existing Album 1 - Title 1", "Existing Album 2 - Title 2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Add new album
+	err = queue.AddAlbum("New Artist - New Album")
+	if err != nil {
+		t.Errorf("AddAlbum returned error: %v", err)
+	}
+
+	// Verify album was appended
+	lines, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue: %v", err)
+	}
+
+	expected := []string{"Existing Album 1 - Title 1", "Existing Album 2 - Title 2", "New Artist - New Album"}
+	if len(lines) != len(expected) {
+		t.Errorf("Expected %d lines in queue, got %d", len(expected), len(lines))
+	}
+
+	for i, expectedAlbum := range expected {
+		if i < len(lines) && lines[i] != expectedAlbum {
+			t.Errorf("Line %d: expected %q, got %q", i, expectedAlbum, lines[i])
+		}
+	}
+
+	// Try to add duplicate of existing album
+	err = queue.AddAlbum("existing album 1 - title 1") // case insensitive
+	if err == nil {
+		t.Error("Expected error for duplicate of existing album")
+	}
+
+	expectedErr := "album 'existing album 1 - title 1' already exists"
+	if err == nil || err.Error() != expectedErr {
+		t.Errorf("Expected error '%s', got: %v", expectedErr, err)
+	}
+
+	// Verify queue wasn't modified
+	lines, err = storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue: %v", err)
+	}
+
+	if len(lines) != len(expected) {
+		t.Errorf("Expected queue to remain unchanged after duplicate, got %d lines", len(lines))
+	}
+}
+
+// TestQueueService_AddAlbum_WhitespaceHandling tests proper whitespace handling
+func TestQueueService_AddAlbum_WhitespaceHandling(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	// Add album with extra whitespace
+	err := queue.AddAlbum("  Pink Floyd  -  The Wall  ")
+	if err != nil {
+		t.Errorf("AddAlbum returned error: %v", err)
+	}
+
+	// Verify album was trimmed and stored correctly
+	lines, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue: %v", err)
+	}
+
+	if len(lines) != 1 {
+		t.Errorf("Expected 1 line in queue, got %d", len(lines))
+	}
+
+	// Note: The exact whitespace handling depends on the implementation
+	// The album should be stored with trimmed overall whitespace
+	expected := "Pink Floyd  -  The Wall" // Whitespace around dash preserved, but overall trimmed
+	if lines[0] != expected {
+		t.Errorf("Expected %q, got %q", expected, lines[0])
 	}
 }

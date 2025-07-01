@@ -49,6 +49,60 @@ func validateAlbumFormat(album string) bool {
 	return len(beforeDash) > 0 && len(afterDash) > 0
 }
 
+// addAlbumCheck validates a single album, checks for duplicates against the given map,
+// and returns an error if it fails. This is a helper for AddAlbum and ImportAlbums.
+func addAlbumCheck(albumTitle string, existingAlbumsMap map[string]bool) error {
+	trimmedTitle := strings.TrimSpace(albumTitle)
+
+	if !validateAlbumFormat(trimmedTitle) {
+		return fmt.Errorf("invalid format") // Generic error, handled by callers
+	}
+
+	albumLower := strings.ToLower(trimmedTitle)
+	if existingAlbumsMap[albumLower] {
+		return fmt.Errorf("album '%s' already exists", trimmedTitle)
+	}
+
+	return nil
+}
+
+// AddAlbum adds a single album to the queue with duplicate checking
+// Returns an error if the album format is invalid or if there's a storage error
+func (qs *QueueService) AddAlbum(albumTitle string) error {
+	// Read existing queue
+	existingAlbums, err := qs.storage.ReadLines()
+	if err != nil {
+		return fmt.Errorf("failed to read existing queue: %w", err)
+	}
+
+	// Create a map for case-insensitive duplicate checking
+	existingAlbumsMap := make(map[string]bool)
+	for _, album := range existingAlbums {
+		existingAlbumsMap[strings.ToLower(strings.TrimSpace(album))] = true
+	}
+
+	// Validate and check for duplicates using the helper
+	err = addAlbumCheck(albumTitle, existingAlbumsMap)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid format") {
+			return fmt.Errorf("invalid album format: must be 'Artist - Album' format")
+		}
+		// Return the "already exists" error directly
+		return err
+	}
+
+	// Add album to queue
+	updatedAlbums := append(existingAlbums, strings.TrimSpace(albumTitle))
+
+	// Save updated queue
+	err = qs.storage.WriteLines(updatedAlbums)
+	if err != nil {
+		return fmt.Errorf("failed to save updated queue: %w", err)
+	}
+
+	return nil
+}
+
 // ImportAlbums imports albums from a text file, skipping duplicates (case-insensitive)
 // Returns the number of albums added, number skipped, and any error encountered
 func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, err error) {
@@ -81,43 +135,34 @@ func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, e
 		existingAlbumsMap[strings.ToLower(strings.TrimSpace(album))] = true
 	}
 
-	// Process import albums
-	var newAlbums []string
+	// Process import albums using the helper function
 	addedCount := 0
 	skippedCount := 0
+	currentAlbums := existingAlbums
 
 	for _, album := range importAlbums {
-		album = strings.TrimSpace(album)
-
-		// Skip empty lines (already handled by storage layer, but being explicit)
-		if album == "" {
+		// Skip empty lines
+		if strings.TrimSpace(album) == "" {
 			continue
 		}
 
-		// Validate album format (Artist Name - Album Title)
-		if !validateAlbumFormat(album) {
+		// Validate album format and check for duplicates using helper
+		err := addAlbumCheck(album, existingAlbumsMap)
+		if err != nil {
 			skippedCount++
-			continue
+			continue // Skip invalid format or duplicate
 		}
 
-		albumLower := strings.ToLower(album)
-
-		// Check for duplicates (case-insensitive)
-		if existingAlbumsMap[albumLower] {
-			skippedCount++
-			continue
-		}
-
-		// Add to new albums list and mark as existing to prevent duplicates within import file
-		newAlbums = append(newAlbums, album)
-		existingAlbumsMap[albumLower] = true
+		// Add album
+		processedAlbum := strings.TrimSpace(album)
+		currentAlbums = append(currentAlbums, processedAlbum)
+		existingAlbumsMap[strings.ToLower(processedAlbum)] = true
 		addedCount++
 	}
 
-	// If we have new albums, append them to the existing queue and save
-	if len(newAlbums) > 0 {
-		allAlbums := append(existingAlbums, newAlbums...)
-		err = qs.storage.WriteLines(allAlbums)
+	// If we have new albums, save the updated queue
+	if addedCount > 0 {
+		err = qs.storage.WriteLines(currentAlbums)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to save updated queue: %w", err)
 		}
@@ -131,7 +176,7 @@ func GetDefaultQueuePath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		// Fallback to current directory if can't get home directory
-		return ".go-music-queue/queue.txt"
+		return ".music-queue/queue.txt"
 	}
-	return filepath.Join(homeDir, ".go-music-queue", "queue.txt")
+	return filepath.Join(homeDir, ".music-queue", "queue.txt")
 }
