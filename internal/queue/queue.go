@@ -211,6 +211,30 @@ func (qs *QueueService) GetNextAlbum() (string, error) {
 	return selectedAlbum, nil
 }
 
+// ListAlbums retrieves all albums currently in the queue
+// Returns a slice of album strings and any error encountered
+func (qs *QueueService) ListAlbums() ([]string, error) {
+	// Read existing queue
+	existingAlbums, err := qs.storage.ReadLines()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read queue: %w", err)
+	}
+
+	return existingAlbums, nil
+}
+
+// CountAlbums returns the number of albums currently in the queue
+// Returns the count as an integer and any error encountered
+func (qs *QueueService) CountAlbums() (int, error) {
+	// Read existing queue
+	existingAlbums, err := qs.storage.ReadLines()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read queue: %w", err)
+	}
+
+	return len(existingAlbums), nil
+}
+
 // GetDefaultQueuePath returns the default queue file path
 func GetDefaultQueuePath() string {
 	homeDir, err := os.UserHomeDir()

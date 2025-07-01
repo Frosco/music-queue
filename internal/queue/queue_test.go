@@ -832,3 +832,193 @@ func TestQueueService_GetNextAlbum_NonExistentFile(t *testing.T) {
 		t.Errorf("Expected 'queue is empty' error message, got: %v", err)
 	}
 }
+
+func TestQueueService_ListAlbums_EmptyQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	albums, err := queue.ListAlbums()
+
+	if err != nil {
+		t.Errorf("ListAlbums returned error for empty queue: %v", err)
+	}
+
+	if len(albums) != 0 {
+		t.Errorf("Expected empty slice for empty queue, got %d albums", len(albums))
+	}
+}
+
+func TestQueueService_ListAlbums_NonExistentFile(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "nonexistent.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	albums, err := queue.ListAlbums()
+
+	if err != nil {
+		t.Errorf("ListAlbums returned error for non-existent file: %v", err)
+	}
+
+	if len(albums) != 0 {
+		t.Errorf("Expected empty slice for non-existent file, got %d albums", len(albums))
+	}
+}
+
+func TestQueueService_ListAlbums_WithAlbums(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with albums
+	storage := storage.NewFileStorage(queueFile)
+	expectedAlbums := []string{
+		"Pink Floyd - Dark Side of the Moon",
+		"The Beatles - Abbey Road",
+		"Led Zeppelin - IV",
+		"Queen - A Night at the Opera",
+	}
+	err := storage.WriteLines(expectedAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	albums, err := queue.ListAlbums()
+
+	if err != nil {
+		t.Errorf("ListAlbums returned error: %v", err)
+	}
+
+	if len(albums) != len(expectedAlbums) {
+		t.Errorf("Expected %d albums, got %d", len(expectedAlbums), len(albums))
+	}
+
+	// Verify albums are returned in the same order
+	for i, expected := range expectedAlbums {
+		if i < len(albums) && albums[i] != expected {
+			t.Errorf("Album %d: expected %q, got %q", i, expected, albums[i])
+		}
+	}
+}
+
+func TestQueueService_ListAlbums_WithSingleAlbum(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with single album
+	storage := storage.NewFileStorage(queueFile)
+	expectedAlbums := []string{"Pink Floyd - Dark Side of the Moon"}
+	err := storage.WriteLines(expectedAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	albums, err := queue.ListAlbums()
+
+	if err != nil {
+		t.Errorf("ListAlbums returned error: %v", err)
+	}
+
+	if len(albums) != 1 {
+		t.Errorf("Expected 1 album, got %d", len(albums))
+	}
+
+	if albums[0] != expectedAlbums[0] {
+		t.Errorf("Expected %q, got %q", expectedAlbums[0], albums[0])
+	}
+}
+
+func TestQueueService_CountAlbums_EmptyQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	count, err := queue.CountAlbums()
+	if err != nil {
+		t.Errorf("CountAlbums returned error for empty queue: %v", err)
+	}
+
+	if count != 0 {
+		t.Errorf("Expected 0 albums in empty queue, got %d", count)
+	}
+}
+
+func TestQueueService_CountAlbums_NonExistentFile(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "nonexistent.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	count, err := queue.CountAlbums()
+	if err != nil {
+		t.Errorf("CountAlbums returned error for non-existent file: %v", err)
+	}
+
+	if count != 0 {
+		t.Errorf("Expected 0 albums for non-existent file, got %d", count)
+	}
+}
+
+func TestQueueService_CountAlbums_WithAlbums(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	// Add multiple albums
+	albums := []string{
+		"Artist 1 - Album 1",
+		"Artist 2 - Album 2",
+		"Artist 3 - Album 3",
+	}
+
+	for _, album := range albums {
+		err := queue.AddAlbum(album)
+		if err != nil {
+			t.Fatalf("AddAlbum failed: %v", err)
+		}
+	}
+
+	count, err := queue.CountAlbums()
+	if err != nil {
+		t.Errorf("CountAlbums returned error: %v", err)
+	}
+
+	if count != 3 {
+		t.Errorf("Expected 3 albums, got %d", count)
+	}
+}
+
+func TestQueueService_CountAlbums_WithSingleAlbum(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	storage := storage.NewFileStorage(queueFile)
+	queue := NewQueue(storage)
+
+	// Add one album
+	err := queue.AddAlbum("Single Artist - Single Album")
+	if err != nil {
+		t.Fatalf("AddAlbum failed: %v", err)
+	}
+
+	count, err := queue.CountAlbums()
+	if err != nil {
+		t.Errorf("CountAlbums returned error: %v", err)
+	}
+
+	if count != 1 {
+		t.Errorf("Expected 1 album, got %d", count)
+	}
+}
