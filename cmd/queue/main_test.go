@@ -193,6 +193,10 @@ func TestCLI_Help(t *testing.T) {
 		t.Errorf("Expected help title. Output: %s", outputStr)
 	}
 
+	if !strings.Contains(outputStr, "add") {
+		t.Errorf("Expected add command in help. Output: %s", outputStr)
+	}
+
 	if !strings.Contains(outputStr, "import") {
 		t.Errorf("Expected import command in help. Output: %s", outputStr)
 	}
@@ -237,5 +241,290 @@ func TestCLI_UnknownCommand(t *testing.T) {
 	// Check error message
 	if !strings.Contains(outputStr, "Unknown command") {
 		t.Errorf("Expected unknown command error message. Output: %s", outputStr)
+	}
+}
+
+// TestCLI_Add_Success tests successfully adding a single album
+func TestCLI_Add_Success(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Add first album to empty queue
+	cmd := exec.Command("go", "run", "main.go", "add", "--queue", queueFile, "The Beatles - Abbey Road")
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check success message
+	if !strings.Contains(outputStr, "Successfully added album: 'The Beatles - Abbey Road'") {
+		t.Errorf("Expected success message not found. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, "Queue saved to:") {
+		t.Errorf("Expected queue location message not found. Output: %s", outputStr)
+	}
+
+	// Verify queue file was created with correct content
+	queueContent, err := os.ReadFile(queueFile)
+	if err != nil {
+		t.Fatalf("Failed to read queue file: %v", err)
+	}
+
+	queueLines := strings.Split(strings.TrimSpace(string(queueContent)), "\n")
+	if len(queueLines) != 1 {
+		t.Errorf("Expected 1 album in queue, got %d", len(queueLines))
+	}
+
+	if queueLines[0] != "The Beatles - Abbey Road" {
+		t.Errorf("Expected 'The Beatles - Abbey Road', got %q", queueLines[0])
+	}
+
+	// Add second album to existing queue
+	cmd = exec.Command("go", "run", "main.go", "add", "--queue", queueFile, "Pink Floyd - The Wall")
+	cmd.Dir = "."
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr = string(output)
+
+	// Check success message for second album
+	if !strings.Contains(outputStr, "Successfully added album: 'Pink Floyd - The Wall'") {
+		t.Errorf("Expected success message for second album not found. Output: %s", outputStr)
+	}
+
+	// Verify both albums are in queue
+	queueContent, err = os.ReadFile(queueFile)
+	if err != nil {
+		t.Fatalf("Failed to read queue file: %v", err)
+	}
+
+	expectedAlbums := []string{"The Beatles - Abbey Road", "Pink Floyd - The Wall"}
+	queueLines = strings.Split(strings.TrimSpace(string(queueContent)), "\n")
+
+	if len(queueLines) != len(expectedAlbums) {
+		t.Errorf("Expected %d albums in queue, got %d", len(expectedAlbums), len(queueLines))
+	}
+
+	for i, expected := range expectedAlbums {
+		if i < len(queueLines) && queueLines[i] != expected {
+			t.Errorf("Album %d: expected %q, got %q", i, expected, queueLines[i])
+		}
+	}
+}
+
+// TestCLI_Add_Duplicate tests error handling for duplicate albums
+func TestCLI_Add_Duplicate(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Add first album
+	cmd := exec.Command("go", "run", "main.go", "add", "--queue", queueFile, "The Beatles - Abbey Road")
+	cmd.Dir = "."
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	// Should exit with code 0, but print an informational message
+	if err != nil {
+		t.Fatalf("Expected CLI to succeed for duplicate album, but it failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check informational message
+	expectedMsg := "Info: Album 'The Beatles - Abbey Road' already exists"
+	if !strings.Contains(outputStr, expectedMsg) {
+		t.Errorf("Expected info message '%s'. Output: %s", expectedMsg, outputStr)
+	}
+
+	// Try to add case-insensitive duplicate
+	cmd = exec.Command("go", "run", "main.go", "add", "--queue", queueFile, "the beatles - abbey road")
+	cmd.Dir = "."
+
+	output, err = cmd.CombinedOutput()
+
+	// Should also exit with code 0
+	if err != nil {
+		t.Fatalf("Expected CLI to succeed for case-insensitive duplicate, but it failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr = string(output)
+
+	// Check informational message
+	expectedMsg = "Info: Album 'the beatles - abbey road' already exists"
+	if !strings.Contains(outputStr, expectedMsg) {
+		t.Errorf("Expected info message '%s'. Output: %s", expectedMsg, outputStr)
+	}
+
+	// Verify only one album is in queue
+	queueContent, err := os.ReadFile(queueFile)
+	if err != nil {
+		t.Fatalf("Failed to read queue file: %v", err)
+	}
+
+	queueLines := strings.Split(strings.TrimSpace(string(queueContent)), "\n")
+	if len(queueLines) != 1 {
+		t.Errorf("Expected 1 album in queue after duplicates, got %d", len(queueLines))
+	}
+
+	if queueLines[0] != "The Beatles - Abbey Road" {
+		t.Errorf("Expected 'The Beatles - Abbey Road', got %q", queueLines[0])
+	}
+}
+
+// TestCLI_Add_InvalidFormat tests error handling for invalid album format
+func TestCLI_Add_InvalidFormat(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	testCases := []struct {
+		name  string
+		album string
+	}{
+		{"no dash", "No Dash Here"},
+		{"missing artist", "Missing Artist"},
+		{"dash at end", "Missing Album -"},
+		{"whitespace before dash", "   - Album"},
+		{"whitespace after dash", "Artist -   "},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command("go", "run", "main.go", "add", "--queue", queueFile, tc.album)
+			cmd.Dir = "."
+
+			output, err := cmd.CombinedOutput()
+
+			// Should exit with non-zero code
+			if err == nil {
+				t.Errorf("Expected CLI to fail for invalid album format: %q", tc.album)
+			}
+
+			outputStr := string(output)
+
+			// Check error message
+			if !strings.Contains(outputStr, "invalid album format") {
+				t.Errorf("Expected 'invalid album format' error message for %q. Output: %s", tc.album, outputStr)
+			}
+		})
+	}
+
+	// Verify no albums were added
+	if _, err := os.Stat(queueFile); err == nil {
+		queueContent, err := os.ReadFile(queueFile)
+		if err == nil && len(strings.TrimSpace(string(queueContent))) > 0 {
+			t.Errorf("Expected no albums in queue after invalid formats, but queue file has content: %s", string(queueContent))
+		}
+	}
+}
+
+// TestCLI_Add_MissingArgument tests error handling for missing album argument
+func TestCLI_Add_MissingArgument(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Run add command without album argument
+	cmd := exec.Command("go", "run", "main.go", "add", "--queue", queueFile)
+	cmd.Dir = "."
+
+	output, err := cmd.CombinedOutput()
+
+	// Should exit with non-zero code
+	if err == nil {
+		t.Error("Expected CLI to fail for missing album argument")
+	}
+
+	outputStr := string(output)
+
+	// Check error message
+	if !strings.Contains(outputStr, "Album not specified") {
+		t.Errorf("Expected 'Album not specified' error message. Output: %s", outputStr)
+	}
+}
+
+// TestCLI_Add_Help tests the add help command
+func TestCLI_Add_Help(t *testing.T) {
+	// Test add help command
+	cmd := exec.Command("go", "run", "main.go", "add", "--help")
+	cmd.Dir = "."
+
+	output, _ := cmd.CombinedOutput()
+
+	// --help should exit with code 0 for flag package
+	outputStr := string(output)
+
+	// Check add-specific help content
+	if !strings.Contains(outputStr, "Add a single album to the queue") {
+		t.Errorf("Expected add description in help. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, "Artist - Album") {
+		t.Errorf("Expected format description in help. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, "--queue") {
+		t.Errorf("Expected queue flag in help. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, `"The Beatles - Abbey Road"`) {
+		t.Errorf("Expected example in help. Output: %s", outputStr)
+	}
+}
+
+// TestCLI_Add_WithExistingQueue tests adding to an existing queue file
+func TestCLI_Add_WithExistingQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create existing queue
+	existingContent := "Pink Floyd - Dark Side of the Moon\nLed Zeppelin - IV\n"
+	err := os.WriteFile(queueFile, []byte(existingContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add new album
+	cmd := exec.Command("go", "run", "main.go", "add", "--queue", queueFile, "The Beatles - Abbey Road")
+	cmd.Dir = "."
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check success message
+	if !strings.Contains(outputStr, "Successfully added album: 'The Beatles - Abbey Road'") {
+		t.Errorf("Expected success message not found. Output: %s", outputStr)
+	}
+
+	// Verify album was appended to existing queue
+	queueContent, err := os.ReadFile(queueFile)
+	if err != nil {
+		t.Fatalf("Failed to read queue file: %v", err)
+	}
+
+	expectedAlbums := []string{"Pink Floyd - Dark Side of the Moon", "Led Zeppelin - IV", "The Beatles - Abbey Road"}
+	queueLines := strings.Split(strings.TrimSpace(string(queueContent)), "\n")
+
+	if len(queueLines) != len(expectedAlbums) {
+		t.Errorf("Expected %d albums in queue, got %d", len(expectedAlbums), len(queueLines))
+	}
+
+	for i, expected := range expectedAlbums {
+		if i < len(queueLines) && queueLines[i] != expected {
+			t.Errorf("Album %d: expected %q, got %q", i, expected, queueLines[i])
+		}
 	}
 }
