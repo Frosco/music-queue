@@ -26,6 +26,10 @@ func main() {
 		handleAddCommand()
 	case "next":
 		handleNextCommand()
+	case "list":
+		handleListCommand()
+	case "count":
+		handleCountCommand()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -204,13 +208,95 @@ func handleNextCommand() {
 	fmt.Printf("Now listening: %s\n", album)
 }
 
+func handleListCommand() {
+	// Set up flag parsing for list command
+	listFlags := flag.NewFlagSet("list", flag.ExitOnError)
+	queuePath := listFlags.String("queue", queue.GetDefaultQueuePath(), "Path to queue file")
+
+	listFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s list [flags]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "List all albums currently in the queue.\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		listFlags.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  %s list\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s list --queue /custom/path/queue.txt\n", os.Args[0])
+	}
+
+	// Parse list command arguments
+	err := listFlags.Parse(os.Args[2:])
+	if err != nil {
+		os.Exit(1)
+	}
+
+	// Create storage and queue service
+	queueStorage := storage.NewFileStorage(*queuePath)
+	queueService := queue.NewQueue(queueStorage)
+
+	// Get the album list
+	albums, err := queueService.ListAlbums()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if queue is empty
+	if len(albums) == 0 {
+		fmt.Println("The queue is empty.")
+		return
+	}
+
+	// Print the numbered list
+	for i, album := range albums {
+		fmt.Printf("%d. %s\n", i+1, album)
+	}
+}
+
+func handleCountCommand() {
+	// Set up flag parsing for count command
+	countFlags := flag.NewFlagSet("count", flag.ExitOnError)
+	queuePath := countFlags.String("queue", queue.GetDefaultQueuePath(), "Path to queue file")
+
+	countFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s count [flags]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Show the number of albums currently in the queue.\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		countFlags.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  %s count\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s count --queue /custom/path/queue.txt\n", os.Args[0])
+	}
+
+	// Parse count command arguments
+	err := countFlags.Parse(os.Args[2:])
+	if err != nil {
+		os.Exit(1)
+	}
+
+	// Create storage and queue service
+	queueStorage := storage.NewFileStorage(*queuePath)
+	queueService := queue.NewQueue(queueStorage)
+
+	// Get the album count
+	count, err := queueService.CountAlbums()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print the result in the required format
+	fmt.Printf("There are %d albums in the queue.\n", count)
+}
+
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Go Music Queue - Manage your music listening queue\n\n")
 	fmt.Fprintf(os.Stderr, "Usage: %s <command> [arguments]\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "Commands:\n")
 	fmt.Fprintf(os.Stderr, "  add \"Artist - Album\"  Add a single album to the queue\n")
 	fmt.Fprintf(os.Stderr, "  import <file>         Import albums from a text file\n")
+	fmt.Fprintf(os.Stderr, "  list                  List all albums in the queue\n")
 	fmt.Fprintf(os.Stderr, "  next                  Get the next album in the queue\n")
+	fmt.Fprintf(os.Stderr, "  count                 Show the number of albums in the queue\n")
 	fmt.Fprintf(os.Stderr, "  help                  Show this help message\n\n")
 	fmt.Fprintf(os.Stderr, "For command-specific help:\n")
 	fmt.Fprintf(os.Stderr, "  %s <command> --help\n\n", os.Args[0])

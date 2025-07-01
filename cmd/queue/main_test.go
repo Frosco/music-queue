@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -723,5 +724,296 @@ func TestCLI_Next_SingleAlbum(t *testing.T) {
 	updatedContentStr := strings.TrimSpace(string(updatedContent))
 	if updatedContentStr != "" {
 		t.Errorf("Expected empty queue file after selecting last album, got: %q", updatedContentStr)
+	}
+}
+
+// TestCLI_List_WithAlbums tests list command with albums in queue
+func TestCLI_List_WithAlbums(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with test albums
+	testAlbums := []string{
+		"Pink Floyd - Dark Side of the Moon",
+		"The Beatles - Abbey Road",
+		"Led Zeppelin - IV",
+		"Queen - A Night at the Opera",
+	}
+	queueContent := strings.Join(testAlbums, "\n") + "\n"
+	err := os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "list", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output format - should be numbered list starting at 1
+	for i, album := range testAlbums {
+		expectedLine := fmt.Sprintf("%d. %s", i+1, album)
+		if !strings.Contains(outputStr, expectedLine) {
+			t.Errorf("Expected output to contain %q. Output: %s", expectedLine, outputStr)
+		}
+	}
+
+	// Verify all albums are present
+	for _, album := range testAlbums {
+		if !strings.Contains(outputStr, album) {
+			t.Errorf("Expected output to contain album %q. Output: %s", album, outputStr)
+		}
+	}
+}
+
+// TestCLI_List_EmptyQueue tests list command with empty queue
+func TestCLI_List_EmptyQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create empty queue file
+	err := os.WriteFile(queueFile, []byte(""), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "list", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output contains empty queue message
+	if !strings.Contains(outputStr, "The queue is empty.") {
+		t.Errorf("Expected 'The queue is empty.' message. Output: %s", outputStr)
+	}
+}
+
+// TestCLI_List_NonExistentQueue tests list command with non-existent queue file
+func TestCLI_List_NonExistentQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "nonexistent.txt")
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "list", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Should show empty queue message (since ReadLines returns empty slice for non-existent files)
+	if !strings.Contains(outputStr, "The queue is empty.") {
+		t.Errorf("Expected 'The queue is empty.' message. Output: %s", outputStr)
+	}
+}
+
+// TestCLI_List_SingleAlbum tests list command with single album in queue
+func TestCLI_List_SingleAlbum(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with single album
+	testAlbum := "Pink Floyd - The Wall"
+	err := os.WriteFile(queueFile, []byte(testAlbum+"\n"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "list", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output format - should be "1. [Album]"
+	expectedLine := fmt.Sprintf("1. %s", testAlbum)
+	if !strings.Contains(outputStr, expectedLine) {
+		t.Errorf("Expected output to contain %q. Output: %s", expectedLine, outputStr)
+	}
+}
+
+// TestCLI_List_Help tests the list command help
+func TestCLI_List_Help(t *testing.T) {
+	// Test list help command
+	cmd := exec.Command("go", "run", "main.go", "list", "--help")
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("List help command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check help content
+	if !strings.Contains(outputStr, "Usage:") {
+		t.Errorf("Expected usage information in help. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, "list") {
+		t.Errorf("Expected 'list' in help content. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, "List all albums currently in the queue") {
+		t.Errorf("Expected command description in help. Output: %s", outputStr)
+	}
+}
+
+// TestCLI_Count_WithAlbums tests count command with albums in queue
+func TestCLI_Count_WithAlbums(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with albums
+	queueContent := "Artist 1 - Album 1\nArtist 2 - Album 2\nArtist 3 - Album 3\n"
+	err := os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "count", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output format
+	expectedOutput := "There are 3 albums in the queue."
+	if !strings.Contains(outputStr, expectedOutput) {
+		t.Errorf("Expected output '%s', got: %s", expectedOutput, outputStr)
+	}
+}
+
+// TestCLI_Count_EmptyQueue tests count command with empty queue
+func TestCLI_Count_EmptyQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create empty queue file
+	err := os.WriteFile(queueFile, []byte(""), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "count", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output format
+	expectedOutput := "There are 0 albums in the queue."
+	if !strings.Contains(outputStr, expectedOutput) {
+		t.Errorf("Expected output '%s', got: %s", expectedOutput, outputStr)
+	}
+}
+
+// TestCLI_Count_NonExistentQueue tests count command with non-existent queue
+func TestCLI_Count_NonExistentQueue(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "nonexistent.txt")
+
+	// Build and run the CLI (file doesn't exist)
+	cmd := exec.Command("go", "run", "main.go", "count", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output format - should handle gracefully with 0 count
+	expectedOutput := "There are 0 albums in the queue."
+	if !strings.Contains(outputStr, expectedOutput) {
+		t.Errorf("Expected output '%s', got: %s", expectedOutput, outputStr)
+	}
+}
+
+// TestCLI_Count_SingleAlbum tests count command with single album
+func TestCLI_Count_SingleAlbum(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with single album
+	queueContent := "Single Artist - Single Album\n"
+	err := os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "count", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output format
+	expectedOutput := "There are 1 albums in the queue."
+	if !strings.Contains(outputStr, expectedOutput) {
+		t.Errorf("Expected output '%s', got: %s", expectedOutput, outputStr)
+	}
+}
+
+// TestCLI_Count_Help tests count help command
+func TestCLI_Count_Help(t *testing.T) {
+	// Test count help command
+	cmd := exec.Command("go", "run", "main.go", "count", "--help")
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Count help command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check help content for count command
+	if !strings.Contains(outputStr, "Usage:") {
+		t.Errorf("Expected usage information in count help. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, "count") {
+		t.Errorf("Expected 'count' command information in help. Output: %s", outputStr)
+	}
+
+	if !strings.Contains(outputStr, "Show the number of albums") {
+		t.Errorf("Expected count command description in help. Output: %s", outputStr)
 	}
 }
