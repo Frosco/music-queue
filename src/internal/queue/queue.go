@@ -109,29 +109,29 @@ func (qs *QueueService) AddAlbum(albumTitle string) error {
 }
 
 // ImportAlbums imports albums from a text file, skipping duplicates (case-insensitive)
-// Returns the number of albums added, number skipped, and any error encountered
-func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, err error) {
+// Returns the number of albums added, number of duplicates skipped, number of format errors, and any error encountered
+func (qs *QueueService) ImportAlbums(filename string) (added int, duplicates int, formatErrors int, err error) {
 	// Check if import file exists
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return 0, 0, fmt.Errorf("file not found: %s", filename)
+		return 0, 0, 0, fmt.Errorf("file not found: %s", filename)
 	}
 
 	// Read import file
 	importStorage := storage.NewFileStorage(filename)
 	importAlbums, err := importStorage.ReadLines()
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to read import file: %w", err)
+		return 0, 0, 0, fmt.Errorf("failed to read import file: %w", err)
 	}
 
 	// Handle empty file gracefully
 	if len(importAlbums) == 0 {
-		return 0, 0, nil
+		return 0, 0, 0, nil
 	}
 
 	// Read existing queue
 	existingAlbums, err := qs.storage.ReadLines()
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to read existing queue: %w", err)
+		return 0, 0, 0, fmt.Errorf("failed to read existing queue: %w", err)
 	}
 
 	// Create a map for case-insensitive duplicate checking
@@ -140,9 +140,10 @@ func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, e
 		existingAlbumsMap[strings.ToLower(strings.TrimSpace(album))] = true
 	}
 
-	// Process import albums using the helper function
+	// Process import albums, distinguishing between duplicates and format errors
 	addedCount := 0
-	skippedCount := 0
+	duplicatesCount := 0
+	formatErrorsCount := 0
 	currentAlbums := existingAlbums
 
 	for _, album := range importAlbums {
@@ -151,17 +152,24 @@ func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, e
 			continue
 		}
 
-		// Validate album format and check for duplicates using helper
-		err := addAlbumCheck(album, existingAlbumsMap)
-		if err != nil {
-			skippedCount++
-			continue // Skip invalid format or duplicate
+		trimmedAlbum := strings.TrimSpace(album)
+
+		// Check format validity first
+		if !validateAlbumFormat(trimmedAlbum) {
+			formatErrorsCount++
+			continue
+		}
+
+		// Check for duplicates
+		albumLower := strings.ToLower(trimmedAlbum)
+		if existingAlbumsMap[albumLower] {
+			duplicatesCount++
+			continue
 		}
 
 		// Add album
-		processedAlbum := strings.TrimSpace(album)
-		currentAlbums = append(currentAlbums, processedAlbum)
-		existingAlbumsMap[strings.ToLower(processedAlbum)] = true
+		currentAlbums = append(currentAlbums, trimmedAlbum)
+		existingAlbumsMap[albumLower] = true
 		addedCount++
 	}
 
@@ -169,11 +177,11 @@ func (qs *QueueService) ImportAlbums(filename string) (added int, skipped int, e
 	if addedCount > 0 {
 		err = qs.storage.WriteLines(currentAlbums)
 		if err != nil {
-			return 0, 0, fmt.Errorf("failed to save updated queue: %w", err)
+			return 0, 0, 0, fmt.Errorf("failed to save updated queue: %w", err)
 		}
 	}
 
-	return addedCount, skippedCount, nil
+	return addedCount, duplicatesCount, formatErrorsCount, nil
 }
 
 // GetNextAlbum retrieves a random album from the queue and removes it

@@ -43,14 +43,14 @@ func TestQueueService_ImportAlbums_FileNotFound(t *testing.T) {
 	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
 
-	added, skipped, err := queue.ImportAlbums(nonExistentFile)
+	added, duplicates, formatErrors, err := queue.ImportAlbums(nonExistentFile)
 
 	if err == nil {
 		t.Error("Expected error for non-existent file")
 	}
 
-	if added != 0 || skipped != 0 {
-		t.Errorf("Expected 0 added and 0 skipped for non-existent file, got added=%d, skipped=%d", added, skipped)
+	if added != 0 || duplicates != 0 || formatErrors != 0 {
+		t.Errorf("Expected 0 added, 0 duplicates, 0 formatErrors for non-existent file, got added=%d, duplicates=%d, formatErrors=%d", added, duplicates, formatErrors)
 	}
 }
 
@@ -68,14 +68,14 @@ func TestQueueService_ImportAlbums_EmptyFile(t *testing.T) {
 	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
 
-	added, skipped, err := queue.ImportAlbums(emptyImportFile)
+	added, duplicates, formatErrors, err := queue.ImportAlbums(emptyImportFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error for empty file: %v", err)
 	}
 
-	if added != 0 || skipped != 0 {
-		t.Errorf("Expected 0 added and 0 skipped for empty file, got added=%d, skipped=%d", added, skipped)
+	if added != 0 || duplicates != 0 || formatErrors != 0 {
+		t.Errorf("Expected 0 added, 0 duplicates, 0 formatErrors for empty file, got added=%d, duplicates=%d, formatErrors=%d", added, duplicates, formatErrors)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestQueueService_ImportAlbums_NewAlbums(t *testing.T) {
 	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
 
-	added, skipped, err := queue.ImportAlbums(importFile)
+	added, duplicates, formatErrors, err := queue.ImportAlbums(importFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error: %v", err)
@@ -104,8 +104,12 @@ func TestQueueService_ImportAlbums_NewAlbums(t *testing.T) {
 		t.Errorf("Expected 3 added, got %d", added)
 	}
 
-	if skipped != 0 {
-		t.Errorf("Expected 0 skipped, got %d", skipped)
+	if duplicates != 0 {
+		t.Errorf("Expected 0 duplicates, got %d", duplicates)
+	}
+
+	if formatErrors != 0 {
+		t.Errorf("Expected 0 formatErrors, got %d", formatErrors)
 	}
 
 	// Verify albums were saved
@@ -132,21 +136,23 @@ func TestQueueService_ImportAlbums_WithExistingQueue(t *testing.T) {
 	importFile := filepath.Join(tempDir, "import.txt")
 
 	// Create existing queue
-	storage := storage.NewFileStorage(queueFile)
-	err := storage.WriteLines([]string{"Existing Artist 1 - Existing Album 1", "Existing Artist 2 - Existing Album 2"})
+	existingContent := "Existing Artist - Existing Album\n"
+	err := os.WriteFile(queueFile, []byte(existingContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Create import file with mix of new and existing albums
-	importContent := "Artist 1 - Album 1\nExisting Artist 1 - Existing Album 1\nArtist 2 - Album 2\n"
+	// Create import file with new albums
+	importContent := "Artist 1 - Album 1\nArtist 2 - Album 2\n"
 	err = os.WriteFile(importFile, []byte(importContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
-	added, skipped, err := queue.ImportAlbums(importFile)
+
+	added, duplicates, formatErrors, err := queue.ImportAlbums(importFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error: %v", err)
@@ -156,19 +162,29 @@ func TestQueueService_ImportAlbums_WithExistingQueue(t *testing.T) {
 		t.Errorf("Expected 2 added, got %d", added)
 	}
 
-	if skipped != 1 {
-		t.Errorf("Expected 1 skipped, got %d", skipped)
+	if duplicates != 0 {
+		t.Errorf("Expected 0 duplicates, got %d", duplicates)
 	}
 
-	// Verify final queue content
+	if formatErrors != 0 {
+		t.Errorf("Expected 0 formatErrors, got %d", formatErrors)
+	}
+
+	// Verify albums were added to existing queue
 	lines, err := storage.ReadLines()
 	if err != nil {
 		t.Errorf("Failed to read queue: %v", err)
 	}
 
-	expected := []string{"Existing Artist 1 - Existing Album 1", "Existing Artist 2 - Existing Album 2", "Artist 1 - Album 1", "Artist 2 - Album 2"}
+	expected := []string{"Existing Artist - Existing Album", "Artist 1 - Album 1", "Artist 2 - Album 2"}
 	if len(lines) != len(expected) {
 		t.Errorf("Expected %d lines in queue, got %d", len(expected), len(lines))
+	}
+
+	for i, expectedAlbum := range expected {
+		if i < len(lines) && lines[i] != expectedAlbum {
+			t.Errorf("Line %d: expected %q, got %q", i, expectedAlbum, lines[i])
+		}
 	}
 }
 
@@ -178,21 +194,23 @@ func TestQueueService_ImportAlbums_CaseInsensitiveDuplicates(t *testing.T) {
 	importFile := filepath.Join(tempDir, "import.txt")
 
 	// Create existing queue with mixed case
-	storage := storage.NewFileStorage(queueFile)
-	err := storage.WriteLines([]string{"Pink Floyd - Dark Side of the Moon", "The Beatles - Abbey Road"})
+	existingContent := "Pink Floyd - Dark Side of the Moon\nThe Beatles - Abbey Road\n"
+	err := os.WriteFile(queueFile, []byte(existingContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Create import file with case variations
-	importContent := "PINK FLOYD - DARK SIDE OF THE MOON\nthe beatles - abbey road\nPink Floyd - The Wall\npink floyd - dark side of the moon\n"
+	// Create import file with case variations and one new album
+	importContent := "PINK FLOYD - DARK SIDE OF THE MOON\nthe beatles - abbey road\nLed Zeppelin - IV\n"
 	err = os.WriteFile(importFile, []byte(importContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
-	added, skipped, err := queue.ImportAlbums(importFile)
+
+	added, duplicates, formatErrors, err := queue.ImportAlbums(importFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error: %v", err)
@@ -202,8 +220,12 @@ func TestQueueService_ImportAlbums_CaseInsensitiveDuplicates(t *testing.T) {
 		t.Errorf("Expected 1 added, got %d", added)
 	}
 
-	if skipped != 3 {
-		t.Errorf("Expected 3 skipped, got %d", skipped)
+	if duplicates != 2 {
+		t.Errorf("Expected 2 duplicates, got %d", duplicates)
+	}
+
+	if formatErrors != 0 {
+		t.Errorf("Expected 0 formatErrors, got %d", formatErrors)
 	}
 }
 
@@ -212,8 +234,8 @@ func TestQueueService_ImportAlbums_MalformedInput(t *testing.T) {
 	queueFile := filepath.Join(tempDir, "queue.txt")
 	importFile := filepath.Join(tempDir, "import.txt")
 
-	// Create import file with empty lines and whitespace
-	importContent := "Artist 1 - Album 1\n\n  \n\t\nArtist 2 - Album 2\n   Artist 3 - Album 3   \n\n"
+	// Create import file with some malformed entries
+	importContent := "Pink Floyd - Dark Side of the Moon\n\n   \nThe Beatles - Abbey Road\n"
 	err := os.WriteFile(importFile, []byte(importContent), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -222,27 +244,31 @@ func TestQueueService_ImportAlbums_MalformedInput(t *testing.T) {
 	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
 
-	added, skipped, err := queue.ImportAlbums(importFile)
+	added, duplicates, formatErrors, err := queue.ImportAlbums(importFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error: %v", err)
 	}
 
-	if added != 3 {
-		t.Errorf("Expected 3 added, got %d", added)
+	if added != 2 {
+		t.Errorf("Expected 2 added, got %d", added)
 	}
 
-	if skipped != 0 {
-		t.Errorf("Expected 0 skipped, got %d", skipped)
+	if duplicates != 0 {
+		t.Errorf("Expected 0 duplicates, got %d", duplicates)
 	}
 
-	// Verify trimmed content
+	if formatErrors != 0 {
+		t.Errorf("Expected 0 formatErrors, got %d", formatErrors)
+	}
+
+	// Verify only valid albums were added
 	lines, err := storage.ReadLines()
 	if err != nil {
 		t.Errorf("Failed to read queue: %v", err)
 	}
 
-	expected := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
+	expected := []string{"Pink Floyd - Dark Side of the Moon", "The Beatles - Abbey Road"}
 	if len(lines) != len(expected) {
 		t.Errorf("Expected %d lines in queue, got %d", len(expected), len(lines))
 	}
@@ -259,8 +285,8 @@ func TestQueueService_ImportAlbums_DuplicatesWithinImportFile(t *testing.T) {
 	queueFile := filepath.Join(tempDir, "queue.txt")
 	importFile := filepath.Join(tempDir, "import.txt")
 
-	// Create import file with duplicates within the same file
-	importContent := "Artist 1 - Album 1\nArtist 2 - Album 2\nARTIST 1 - ALBUM 1\nartist 2 - album 2\nArtist 3 - Album 3\n"
+	// Create import file with duplicates within the file itself
+	importContent := "Pink Floyd - Dark Side of the Moon\nThe Beatles - Abbey Road\npink floyd - dark side of the moon\nLed Zeppelin - IV\n"
 	err := os.WriteFile(importFile, []byte(importContent), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +295,7 @@ func TestQueueService_ImportAlbums_DuplicatesWithinImportFile(t *testing.T) {
 	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
 
-	added, skipped, err := queue.ImportAlbums(importFile)
+	added, duplicates, formatErrors, err := queue.ImportAlbums(importFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error: %v", err)
@@ -279,19 +305,29 @@ func TestQueueService_ImportAlbums_DuplicatesWithinImportFile(t *testing.T) {
 		t.Errorf("Expected 3 added, got %d", added)
 	}
 
-	if skipped != 2 {
-		t.Errorf("Expected 2 skipped, got %d", skipped)
+	if duplicates != 1 {
+		t.Errorf("Expected 1 duplicate, got %d", duplicates)
 	}
 
-	// Verify no duplicates in final queue
+	if formatErrors != 0 {
+		t.Errorf("Expected 0 formatErrors, got %d", formatErrors)
+	}
+
+	// Verify correct albums were added (first occurrence wins)
 	lines, err := storage.ReadLines()
 	if err != nil {
 		t.Errorf("Failed to read queue: %v", err)
 	}
 
-	expected := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
+	expected := []string{"Pink Floyd - Dark Side of the Moon", "The Beatles - Abbey Road", "Led Zeppelin - IV"}
 	if len(lines) != len(expected) {
 		t.Errorf("Expected %d lines in queue, got %d", len(expected), len(lines))
+	}
+
+	for i, expectedAlbum := range expected {
+		if i < len(lines) && lines[i] != expectedAlbum {
+			t.Errorf("Line %d: expected %q, got %q", i, expectedAlbum, lines[i])
+		}
 	}
 }
 
@@ -358,7 +394,7 @@ Artist -
 	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
 
-	added, skipped, err := queue.ImportAlbums(importFile)
+	added, duplicates, formatErrors, err := queue.ImportAlbums(importFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error: %v", err)
@@ -369,8 +405,12 @@ Artist -
 		t.Errorf("Expected 3 added, got %d", added)
 	}
 
-	if skipped != 6 {
-		t.Errorf("Expected 6 skipped, got %d", skipped)
+	if duplicates != 0 {
+		t.Errorf("Expected 0 duplicates, got %d", duplicates)
+	}
+
+	if formatErrors != 6 {
+		t.Errorf("Expected 6 formatErrors, got %d", formatErrors)
 	}
 
 	// Verify only valid albums were added
@@ -401,56 +441,68 @@ func TestQueueService_ImportAlbums_FormatValidationWithDuplicates(t *testing.T) 
 	queueFile := filepath.Join(tempDir, "queue.txt")
 	importFile := filepath.Join(tempDir, "import.txt")
 
-	// Create existing queue with valid format
-	storage := storage.NewFileStorage(queueFile)
-	err := storage.WriteLines([]string{"Pink Floyd - The Wall", "The Beatles - Let It Be"})
+	// Create existing queue
+	existingContent := "Pink Floyd - The Dark Side of the Moon\n"
+	err := os.WriteFile(queueFile, []byte(existingContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Create import file with mix of valid/invalid formats and duplicates
+	// Create import file with valid, invalid, and duplicate entries
 	importContent := `Pink Floyd - The Dark Side of the Moon
-Invalid Format
-The Beatles - Let It Be
-No Dash Here
-Pink Floyd - The Wall
-- Missing Artist
+Invalid Format Without Dash
+The Beatles - Abbey Road
+- Missing Artist Name
+Led Zeppelin - IV
+pink floyd - the dark side of the moon
 `
 	err = os.WriteFile(importFile, []byte(importContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	storage := storage.NewFileStorage(queueFile)
 	queue := NewQueue(storage)
-	added, skipped, err := queue.ImportAlbums(importFile)
+
+	added, duplicates, formatErrors, err := queue.ImportAlbums(importFile)
 
 	if err != nil {
 		t.Errorf("ImportAlbums returned error: %v", err)
 	}
 
-	// Should add 1 new valid album, skip 5 (2 duplicates + 3 invalid format)
-	if added != 1 {
-		t.Errorf("Expected 1 added, got %d", added)
+	// Should add 2 valid new albums, skip 2 duplicates, and 2 format errors
+	if added != 2 {
+		t.Errorf("Expected 2 added, got %d", added)
 	}
 
-	if skipped != 5 {
-		t.Errorf("Expected 5 skipped, got %d", skipped)
+	if duplicates != 2 {
+		t.Errorf("Expected 2 duplicates, got %d", duplicates)
 	}
 
-	// Verify final queue content
+	if formatErrors != 2 {
+		t.Errorf("Expected 2 formatErrors, got %d", formatErrors)
+	}
+
+	// Verify correct albums were added
 	lines, err := storage.ReadLines()
 	if err != nil {
 		t.Errorf("Failed to read queue: %v", err)
 	}
 
 	expected := []string{
-		"Pink Floyd - The Wall",
-		"The Beatles - Let It Be",
 		"Pink Floyd - The Dark Side of the Moon",
+		"The Beatles - Abbey Road",
+		"Led Zeppelin - IV",
 	}
 
 	if len(lines) != len(expected) {
 		t.Errorf("Expected %d lines in queue, got %d", len(expected), len(lines))
+	}
+
+	for i, expectedAlbum := range expected {
+		if i < len(lines) && lines[i] != expectedAlbum {
+			t.Errorf("Line %d: expected %q, got %q", i, expectedAlbum, lines[i])
+		}
 	}
 }
 

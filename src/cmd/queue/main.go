@@ -90,17 +90,29 @@ func handleImportCommand() {
 	// Perform import
 	fmt.Printf("Importing albums from '%s'...\n", absImportFile)
 
-	added, skipped, err := queueService.ImportAlbums(importFile)
+	added, duplicates, formatErrors, err := queueService.ImportAlbums(importFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Display results with clear formatting
-	if added == 0 && skipped == 0 {
+	if added == 0 && duplicates == 0 && formatErrors == 0 {
 		fmt.Println("No albums found in import file.")
 	} else {
-		fmt.Printf("Import complete! Added %d albums, Skipped %d duplicates\n", added, skipped)
+		// Build result message with dynamic components
+		var resultParts []string
+		if added > 0 {
+			resultParts = append(resultParts, fmt.Sprintf("Added %d albums", added))
+		}
+		if duplicates > 0 {
+			resultParts = append(resultParts, fmt.Sprintf("Skipped %d duplicates", duplicates))
+		}
+		if formatErrors > 0 {
+			resultParts = append(resultParts, fmt.Sprintf("%d format errors", formatErrors))
+		}
+		
+		fmt.Printf("Import complete! %s\n", strings.Join(resultParts, ", "))
 
 		// Show queue file location
 		absQueuePath, err := filepath.Abs(*queuePath)
