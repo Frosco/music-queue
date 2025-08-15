@@ -751,14 +751,14 @@ func TestQueueService_GetNextAlbum_Success(t *testing.T) {
 	queueFile := filepath.Join(tempDir, "queue.txt")
 
 	// Create queue with test albums
-	storage := storage.NewFileStorage(queueFile)
+	queueStorage := storage.NewFileStorage(queueFile)
 	testAlbums := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
-	err := storage.WriteLines(testAlbums)
+	err := queueStorage.WriteLines(testAlbums)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	queue := NewQueue(storage)
+	queue := NewQueue(queueStorage)
 
 	// Get next album
 	selectedAlbum, err := queue.GetNextAlbum()
@@ -779,7 +779,7 @@ func TestQueueService_GetNextAlbum_Success(t *testing.T) {
 	}
 
 	// Verify queue size decreased by 1
-	remainingAlbums, err := storage.ReadLines()
+	remainingAlbums, err := queueStorage.ReadLines()
 	if err != nil {
 		t.Errorf("Failed to read remaining albums: %v", err)
 	}
@@ -1072,5 +1072,344 @@ func TestQueueService_CountAlbums_WithSingleAlbum(t *testing.T) {
 
 	if count != 1 {
 		t.Errorf("Expected 1 album, got %d", count)
+	}
+}
+
+// Archive functionality tests
+
+func TestQueueService_GetNextAlbum_ArchivesAlbum(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	archiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create queue with test albums
+	storage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
+	err := storage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Get next album
+	selectedAlbum, err := queue.GetNextAlbum()
+	if err != nil {
+		t.Errorf("GetNextAlbum returned error: %v", err)
+	}
+
+	// Verify selected album is one of the test albums
+	found := false
+	for _, album := range testAlbums {
+		if album == selectedAlbum {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Selected album %q not found in original list", selectedAlbum)
+	}
+
+	// Verify queue size decreased by 1
+	remainingAlbums, err := storage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read remaining albums: %v", err)
+	}
+
+	if len(remainingAlbums) != len(testAlbums)-1 {
+		t.Errorf("Expected %d remaining albums, got %d", len(testAlbums)-1, len(remainingAlbums))
+	}
+
+	// Verify selected album was removed from queue
+	for _, remainingAlbum := range remainingAlbums {
+		if remainingAlbum == selectedAlbum {
+			t.Errorf("Selected album %q was not removed from queue", selectedAlbum)
+		}
+	}
+
+	// Verify album was added to archive
+	archiveStorageInstance := storage.NewFileStorage(archiveFile)
+	archivedAlbums, err := archiveStorageInstance.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read archive: %v", err)
+	}
+
+	if len(archivedAlbums) != 1 {
+		t.Errorf("Expected 1 album in archive, got %d", len(archivedAlbums))
+	}
+
+	if archivedAlbums[0] != selectedAlbum {
+		t.Errorf("Expected archived album %q, got %q", selectedAlbum, archivedAlbums[0])
+	}
+}
+
+func TestQueueService_GetNextAlbum_ArchivesMultipleAlbums(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	archiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create queue with test albums
+	queueStorage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1", "Artist 2 - Album 2", "Artist 3 - Album 3"}
+	err := queueStorage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(queueStorage)
+
+	// Get next album multiple times
+	selectedAlbums := make([]string, 0)
+	for i := 0; i < 2; i++ {
+		selectedAlbum, err := queue.GetNextAlbum()
+		if err != nil {
+			t.Errorf("GetNextAlbum returned error on iteration %d: %v", i, err)
+		}
+		selectedAlbums = append(selectedAlbums, selectedAlbum)
+	}
+
+	// Verify queue size decreased by 2
+	remainingAlbums, err := queueStorage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read remaining albums: %v", err)
+	}
+
+	if len(remainingAlbums) != len(testAlbums)-2 {
+		t.Errorf("Expected %d remaining albums, got %d", len(testAlbums)-2, len(remainingAlbums))
+	}
+
+	// Verify archive contains both selected albums
+	archiveStorageInstance := storage.NewFileStorage(archiveFile)
+	archivedAlbums, err := archiveStorageInstance.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read archive: %v", err)
+	}
+
+	if len(archivedAlbums) != 2 {
+		t.Errorf("Expected 2 albums in archive, got %d", len(archivedAlbums))
+	}
+
+	// Verify both selected albums are in archive
+	for _, selectedAlbum := range selectedAlbums {
+		found := false
+		for _, archivedAlbum := range archivedAlbums {
+			if archivedAlbum == selectedAlbum {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Selected album %q not found in archive", selectedAlbum)
+		}
+	}
+}
+
+func TestQueueService_GetNextAlbum_ArchiveFileCreatedInSameDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "custom_queue.txt")
+	expectedArchiveFile := filepath.Join(tempDir, "custom_queue_archive.txt")
+
+	// Create queue with custom filename
+	storage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1"}
+	err := storage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Get next album
+	_, err = queue.GetNextAlbum()
+	if err != nil {
+		t.Errorf("GetNextAlbum returned error: %v", err)
+	}
+
+	// Verify archive file was created in the same directory
+	if _, err := os.Stat(expectedArchiveFile); os.IsNotExist(err) {
+		t.Errorf("Archive file was not created at expected location: %s", expectedArchiveFile)
+	}
+
+	// Verify archive contains the album
+	archiveStorageInstance := storage.NewFileStorage(expectedArchiveFile)
+	archivedAlbums, err := archiveStorageInstance.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read archive: %v", err)
+	}
+
+	if len(archivedAlbums) != 1 {
+		t.Errorf("Expected 1 album in archive, got %d", len(archivedAlbums))
+	}
+}
+
+func TestQueueService_GetNextAlbum_ArchiveFileCreatedInNestedDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	nestedDir := filepath.Join(tempDir, "nested", "subdir")
+	queueFile := filepath.Join(nestedDir, "queue.txt")
+	expectedArchiveFile := filepath.Join(nestedDir, "archive.txt")
+
+	// Create queue in nested directory
+	queueStorage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1"}
+	err := queueStorage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(queueStorage)
+
+	// Get next album
+	_, err = queue.GetNextAlbum()
+	if err != nil {
+		t.Errorf("GetNextAlbum returned error: %v", err)
+	}
+
+	// Verify archive file was created in the same nested directory
+	if _, err := os.Stat(expectedArchiveFile); os.IsNotExist(err) {
+		t.Errorf("Archive file was not created at expected location: %s", expectedArchiveFile)
+	}
+}
+
+func TestQueueService_GetNextAlbum_ArchiveAppendsToExistingArchive(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	archiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create existing archive with some albums
+	archiveStorage := storage.NewFileStorage(archiveFile)
+	existingArchived := []string{"Previously Archived - Album 1", "Previously Archived - Album 2"}
+	err := archiveStorage.WriteLines(existingArchived)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create queue with new albums
+	storage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1", "Artist 2 - Album 2"}
+	err = storage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Get next album
+	selectedAlbum, err := queue.GetNextAlbum()
+	if err != nil {
+		t.Errorf("GetNextAlbum returned error: %v", err)
+	}
+
+	// Verify archive contains both existing and new albums
+	archivedAlbums, err := archiveStorage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read archive: %v", err)
+	}
+
+	expectedArchived := append(existingArchived, selectedAlbum)
+	if len(archivedAlbums) != len(expectedArchived) {
+		t.Errorf("Expected %d albums in archive, got %d", len(expectedArchived), len(archivedAlbums))
+	}
+
+	// Verify all expected albums are in archive
+	for i, expected := range expectedArchived {
+		if i < len(archivedAlbums) && archivedAlbums[i] != expected {
+			t.Errorf("Archive line %d: expected %q, got %q", i, expected, archivedAlbums[i])
+		}
+	}
+}
+
+func TestQueueService_GetNextAlbum_ArchiveHandlesEmptyArchiveFile(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	archiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create empty archive file
+	err := os.WriteFile(archiveFile, []byte(""), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create queue with test albums
+	storage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1"}
+	err = storage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Get next album
+	selectedAlbum, err := queue.GetNextAlbum()
+	if err != nil {
+		t.Errorf("GetNextAlbum returned error: %v", err)
+	}
+
+	// Verify archive contains the album
+	archiveStorageInstance := storage.NewFileStorage(archiveFile)
+	archivedAlbums, err := archiveStorageInstance.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read archive: %v", err)
+	}
+
+	if len(archivedAlbums) != 1 {
+		t.Errorf("Expected 1 album in archive, got %d", len(archivedAlbums))
+	}
+
+	if archivedAlbums[0] != selectedAlbum {
+		t.Errorf("Expected archived album %q, got %q", selectedAlbum, archivedAlbums[0])
+	}
+}
+
+func TestQueueService_GetNextAlbum_ArchiveErrorHandling(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+
+	// Create queue with test albums
+	storage := storage.NewFileStorage(queueFile)
+	testAlbums := []string{"Artist 1 - Album 1"}
+	err := storage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queue := NewQueue(storage)
+
+	// Create a read-only directory to cause archive write failure
+	archiveDir := filepath.Join(tempDir, "readonly")
+	err = os.MkdirAll(archiveDir, 0444) // read-only
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Temporarily change the queue to use a file in the read-only directory
+	// This will cause the archive to be created in the read-only directory
+	readonlyQueueFile := filepath.Join(archiveDir, "queue.txt")
+	readonlyStorage := storage.NewFileStorage(readonlyQueueFile)
+	err = readonlyStorage.WriteLines(testAlbums)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readonlyQueue := NewQueue(readonlyStorage)
+
+	// Get next album should fail due to archive write error
+	_, err = readonlyQueue.GetNextAlbum()
+	if err == nil {
+		t.Error("Expected error when archive cannot be written")
+	}
+
+	if !strings.Contains(err.Error(), "failed to archive album") {
+		t.Errorf("Expected archive error message, got: %v", err)
+	}
+
+	// Verify queue was not modified (transaction-like behavior)
+	remainingAlbums, err := readonlyStorage.ReadLines()
+	if err != nil {
+		t.Errorf("Failed to read queue after error: %v", err)
+	}
+
+	if len(remainingAlbums) != 1 {
+		t.Errorf("Expected queue to remain unchanged after archive error, got %d albums", len(remainingAlbums))
 	}
 }

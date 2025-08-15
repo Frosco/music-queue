@@ -157,3 +157,22 @@ func TestFileStorage_WriteLines_CreateDirectory(t *testing.T) {
 		t.Errorf("Expected ['Test Album'], got %v", lines)
 	}
 }
+
+func TestFileStorage_GetFilePath(t *testing.T) {
+	filePath := "/tmp/test.txt"
+	storage := NewFileStorage(filePath)
+
+	retrievedPath := storage.GetFilePath()
+	if retrievedPath != filePath {
+		t.Errorf("Expected file path %s, got %s", filePath, retrievedPath)
+	}
+
+	// Test with different path
+	anotherPath := "/home/user/music/queue.txt"
+	anotherStorage := NewFileStorage(anotherPath)
+
+	retrievedAnotherPath := anotherStorage.GetFilePath()
+	if retrievedAnotherPath != anotherPath {
+		t.Errorf("Expected file path %s, got %s", anotherPath, retrievedAnotherPath)
+	}
+}

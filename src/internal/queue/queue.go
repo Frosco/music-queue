@@ -184,7 +184,7 @@ func (qs *QueueService) ImportAlbums(filename string) (added int, duplicates int
 	return addedCount, duplicatesCount, formatErrorsCount, nil
 }
 
-// GetNextAlbum retrieves a random album from the queue and removes it
+// GetNextAlbum retrieves a random album from the queue, removes it, and archives it
 // Returns the selected album and any error encountered
 func (qs *QueueService) GetNextAlbum() (string, error) {
 	// Read existing queue
@@ -216,7 +216,53 @@ func (qs *QueueService) GetNextAlbum() (string, error) {
 		return "", fmt.Errorf("failed to save updated queue: %w", err)
 	}
 
+	// Archive the selected album
+	err = qs.archiveAlbum(selectedAlbum)
+	if err != nil {
+		return "", fmt.Errorf("failed to archive album: %w", err)
+	}
+
 	return selectedAlbum, nil
+}
+
+// archiveAlbum adds an album to the archive file
+func (qs *QueueService) archiveAlbum(album string) error {
+	archivePath := qs.getArchivePath()
+	archiveStorage := storage.NewFileStorage(archivePath)
+
+	// Read existing archive
+	existingArchived, err := archiveStorage.ReadLines()
+	if err != nil {
+		return fmt.Errorf("failed to read archive: %w", err)
+	}
+
+	// Add album to archive (append to end)
+	updatedArchive := append(existingArchived, album)
+
+	// Save updated archive
+	err = archiveStorage.WriteLines(updatedArchive)
+	if err != nil {
+		return fmt.Errorf("failed to save archive: %w", err)
+	}
+
+	return nil
+}
+
+// getArchivePath returns the path to the archive file based on the queue file path
+func (qs *QueueService) getArchivePath() string {
+	queuePath := qs.storage.GetFilePath()
+	queueDir := filepath.Dir(queuePath)
+	queueBase := filepath.Base(queuePath)
+
+	// Replace "queue.txt" with "archive.txt" or add "_archive.txt" if different name
+	if queueBase == "queue.txt" {
+		return filepath.Join(queueDir, "archive.txt")
+	}
+
+	// For custom queue file names, append "_archive" before the extension
+	ext := filepath.Ext(queueBase)
+	nameWithoutExt := strings.TrimSuffix(queueBase, ext)
+	return filepath.Join(queueDir, nameWithoutExt+"_archive"+ext)
 }
 
 // ListAlbums retrieves all albums currently in the queue

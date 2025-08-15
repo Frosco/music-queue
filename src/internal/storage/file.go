@@ -77,3 +77,8 @@ func (fs *FileStorage) WriteLines(lines []string) error {
 
 	return nil
 }
+
+// GetFilePath returns the file path for this storage instance
+func (fs *FileStorage) GetFilePath() string {
+	return fs.filePath
+}

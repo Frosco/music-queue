@@ -1017,3 +1017,268 @@ func TestCLI_Count_Help(t *testing.T) {
 		t.Errorf("Expected count command description in help. Output: %s", outputStr)
 	}
 }
+
+// Archive functionality CLI tests
+
+// TestCLI_Next_CreatesArchiveFile tests that the next command creates an archive file
+func TestCLI_Next_CreatesArchiveFile(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	expectedArchiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create queue with test albums
+	queueContent := "Pink Floyd - Dark Side of the Moon\nThe Beatles - Abbey Road\n"
+	err := os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "next", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+
+	// Check output format matches "Now listening: [Artist] - [Album]"
+	if !strings.Contains(outputStr, "Now listening:") {
+		t.Errorf("Expected 'Now listening:' in output. Output: %s", outputStr)
+	}
+
+	// Verify archive file was created
+	if _, err := os.Stat(expectedArchiveFile); os.IsNotExist(err) {
+		t.Errorf("Archive file was not created at expected location: %s", expectedArchiveFile)
+	}
+
+	// Verify archive contains one album
+	archiveContent, err := os.ReadFile(expectedArchiveFile)
+	if err != nil {
+		t.Fatalf("Failed to read archive file: %v", err)
+	}
+
+	archiveLines := strings.Split(strings.TrimSpace(string(archiveContent)), "\n")
+	if len(archiveLines) != 1 {
+		t.Errorf("Expected 1 album in archive, got %d", len(archiveLines))
+	}
+
+	// Verify the archived album is one of the original albums
+	originalAlbums := []string{"Pink Floyd - Dark Side of the Moon", "The Beatles - Abbey Road"}
+	found := false
+	for _, album := range originalAlbums {
+		if archiveLines[0] == album {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Archived album %q not found in original list", archiveLines[0])
+	}
+}
+
+// TestCLI_Next_ArchiveFileInSameDirectory tests that archive is created in same directory as queue
+func TestCLI_Next_ArchiveFileInSameDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	nestedDir := filepath.Join(tempDir, "nested", "subdir")
+	queueFile := filepath.Join(nestedDir, "custom_queue.txt")
+	expectedArchiveFile := filepath.Join(nestedDir, "custom_queue_archive.txt")
+
+	// Create nested directory
+	err := os.MkdirAll(nestedDir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create queue with test albums
+	queueContent := "Pink Floyd - Dark Side of the Moon\n"
+	err = os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "next", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	// Verify archive file was created in the same nested directory
+	if _, err := os.Stat(expectedArchiveFile); os.IsNotExist(err) {
+		t.Errorf("Archive file was not created at expected location: %s", expectedArchiveFile)
+	}
+
+	// Verify archive contains the album
+	archiveContent, err := os.ReadFile(expectedArchiveFile)
+	if err != nil {
+		t.Fatalf("Failed to read archive file: %v", err)
+	}
+
+	archiveLines := strings.Split(strings.TrimSpace(string(archiveContent)), "\n")
+	if len(archiveLines) != 1 {
+		t.Errorf("Expected 1 album in archive, got %d", len(archiveLines))
+	}
+}
+
+// TestCLI_Next_ArchiveAppendsToExistingArchive tests that archive appends to existing archive
+func TestCLI_Next_ArchiveAppendsToExistingArchive(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	archiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create existing archive with some albums
+	existingArchiveContent := "Previously Archived - Album 1\nPreviously Archived - Album 2\n"
+	err := os.WriteFile(archiveFile, []byte(existingArchiveContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create queue with new albums
+	queueContent := "Pink Floyd - Dark Side of the Moon\nThe Beatles - Abbey Road\n"
+	err = os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "next", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	// Verify archive contains both existing and new albums
+	archiveContent, err := os.ReadFile(archiveFile)
+	if err != nil {
+		t.Fatalf("Failed to read archive file: %v", err)
+	}
+
+	archiveLines := strings.Split(strings.TrimSpace(string(archiveContent)), "\n")
+	if len(archiveLines) != 3 {
+		t.Errorf("Expected 3 albums in archive, got %d", len(archiveLines))
+	}
+
+	// Verify existing albums are still there
+	expectedAlbums := []string{"Previously Archived - Album 1", "Previously Archived - Album 2"}
+	for i, expected := range expectedAlbums {
+		if i < len(archiveLines) && archiveLines[i] != expected {
+			t.Errorf("Archive line %d: expected %q, got %q", i, expected, archiveLines[i])
+		}
+	}
+
+	// Verify the new album was added
+	originalAlbums := []string{"Pink Floyd - Dark Side of the Moon", "The Beatles - Abbey Road"}
+	found := false
+	for _, album := range originalAlbums {
+		if archiveLines[2] == album {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Newly archived album %q not found in original list", archiveLines[2])
+	}
+}
+
+// TestCLI_Next_ArchiveHandlesEmptyArchiveFile tests that archive works with empty archive file
+func TestCLI_Next_ArchiveHandlesEmptyArchiveFile(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	archiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create empty archive file
+	err := os.WriteFile(archiveFile, []byte(""), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create queue with test albums
+	queueContent := "Pink Floyd - Dark Side of the Moon\n"
+	err = os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build and run the CLI
+	cmd := exec.Command("go", "run", "main.go", "next", "--queue", queueFile)
+	cmd.Dir = "." // Run from cmd/queue directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command failed: %v\nOutput: %s", err, output)
+	}
+
+	// Verify archive contains the album
+	archiveContent, err := os.ReadFile(archiveFile)
+	if err != nil {
+		t.Fatalf("Failed to read archive file: %v", err)
+	}
+
+	archiveLines := strings.Split(strings.TrimSpace(string(archiveContent)), "\n")
+	if len(archiveLines) != 1 {
+		t.Errorf("Expected 1 album in archive, got %d", len(archiveLines))
+	}
+
+	if archiveLines[0] != "Pink Floyd - Dark Side of the Moon" {
+		t.Errorf("Expected archived album 'Pink Floyd - Dark Side of the Moon', got %q", archiveLines[0])
+	}
+}
+
+// TestCLI_Next_ArchiveMultipleAlbums tests archiving multiple albums
+func TestCLI_Next_ArchiveMultipleAlbums(t *testing.T) {
+	tempDir := t.TempDir()
+	queueFile := filepath.Join(tempDir, "queue.txt")
+	archiveFile := filepath.Join(tempDir, "archive.txt")
+
+	// Create queue with test albums
+	queueContent := "Pink Floyd - Dark Side of the Moon\nThe Beatles - Abbey Road\nLed Zeppelin - IV\n"
+	err := os.WriteFile(queueFile, []byte(queueContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Get next album multiple times
+	for i := 0; i < 2; i++ {
+		cmd := exec.Command("go", "run", "main.go", "next", "--queue", queueFile)
+		cmd.Dir = "." // Run from cmd/queue directory
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("CLI command failed on iteration %d: %v\nOutput: %s", i, err, output)
+		}
+
+		outputStr := string(output)
+		if !strings.Contains(outputStr, "Now listening:") {
+			t.Errorf("Expected 'Now listening:' in output on iteration %d. Output: %s", i, outputStr)
+		}
+	}
+
+	// Verify archive contains 2 albums
+	archiveContent, err := os.ReadFile(archiveFile)
+	if err != nil {
+		t.Fatalf("Failed to read archive file: %v", err)
+	}
+
+	archiveLines := strings.Split(strings.TrimSpace(string(archiveContent)), "\n")
+	if len(archiveLines) != 2 {
+		t.Errorf("Expected 2 albums in archive, got %d", len(archiveLines))
+	}
+
+	// Verify queue has 1 album remaining
+	queueContentBytes, err := os.ReadFile(queueFile)
+	if err != nil {
+		t.Fatalf("Failed to read queue file: %v", err)
+	}
+
+	queueLines := strings.Split(strings.TrimSpace(string(queueContentBytes)), "\n")
+	if len(queueLines) != 1 {
+		t.Errorf("Expected 1 album remaining in queue, got %d", len(queueLines))
+	}
+}
